@@ -5,6 +5,7 @@ interface WhatWouldChangeMindProps {
     abandonRecommendation: string[]
   }
   className?: string
+  lang?: "de" | "en"
 }
 
 function BulletList({ items }: { items: string[] }) {
@@ -25,8 +26,17 @@ function BulletList({ items }: { items: string[] }) {
   )
 }
 
-export default function WhatWouldChangeMind({ whatWouldChangeOurMind, className = "" }: WhatWouldChangeMindProps) {
+export default function WhatWouldChangeMind({ whatWouldChangeOurMind, className = "", lang = "en" }: WhatWouldChangeMindProps) {
   const { increaseConfidence, decreaseConfidence, abandonRecommendation } = whatWouldChangeOurMind
+  const isDe = lang === "de"
+
+  const heading = isDe ? "Was würde unsere Meinung ändern?" : "What would change our mind?"
+  const subheading = isDe
+    ? "Evidenz und Befunde, die diese Einschätzung aktualisieren würden."
+    : "Evidence and findings that would update this assessment."
+  const increaseLabel = isDe ? "Würde Konfidenz erhöhen" : "Would increase confidence"
+  const decreaseLabel = isDe ? "Würde Konfidenz senken" : "Would decrease confidence"
+  const abandonLabel = isDe ? "Würde Empfehlung aufgeben" : "Would abandon recommendation"
 
   return (
     <section
@@ -39,11 +49,9 @@ export default function WhatWouldChangeMind({ whatWouldChangeOurMind, className 
         </span>
         <div>
           <h2 id="wcm-heading" className="text-base font-semibold text-slate-900">
-            What would change our mind?
+            {heading}
           </h2>
-          <p className="mt-0.5 text-xs text-slate-500">
-            Evidence and findings that would update this assessment.
-          </p>
+          <p className="mt-0.5 text-xs text-slate-500">{subheading}</p>
         </div>
       </div>
 
@@ -55,7 +63,7 @@ export default function WhatWouldChangeMind({ whatWouldChangeOurMind, className 
               ↑
             </span>
             <h3 className="text-xs font-semibold uppercase tracking-wide text-green-700">
-              Would increase confidence
+              {increaseLabel}
             </h3>
           </div>
           <BulletList items={increaseConfidence} />
@@ -68,7 +76,7 @@ export default function WhatWouldChangeMind({ whatWouldChangeOurMind, className 
               ↓
             </span>
             <h3 className="text-xs font-semibold uppercase tracking-wide text-yellow-700">
-              Would decrease confidence
+              {decreaseLabel}
             </h3>
           </div>
           <BulletList items={decreaseConfidence} />
@@ -81,7 +89,7 @@ export default function WhatWouldChangeMind({ whatWouldChangeOurMind, className 
               ✕
             </span>
             <h3 className="text-xs font-semibold uppercase tracking-wide text-red-700">
-              Would abandon recommendation
+              {abandonLabel}
             </h3>
           </div>
           <BulletList items={abandonRecommendation} />

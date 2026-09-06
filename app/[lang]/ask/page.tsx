@@ -1,6 +1,8 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
+import { useLang } from "@/lib/i18n/use-lang"
+import { translations } from "@/lib/i18n/translations"
 import type { AIResponse } from "@/lib/ai/provider"
 
 interface Message {
@@ -10,15 +12,7 @@ interface Message {
   isDemoMode?: boolean
 }
 
-const SUGGESTED_QUESTIONS = [
-  "Which policies have the strongest evidence?",
-  "What are the biggest barriers to housing reform?",
-  "How does Germany compare on skilled migration?",
-  "What would most increase economic growth?",
-  "Which policies could be implemented quickly?",
-]
-
-function ConfidenceChip({ confidence }: { confidence?: AIResponse["confidence"] }) {
+function ConfidenceChip({ confidence, label }: { confidence?: AIResponse["confidence"]; label: string }) {
   if (!confidence || confidence === "demo") return null
 
   const styles =
@@ -30,17 +24,15 @@ function ConfidenceChip({ confidence }: { confidence?: AIResponse["confidence"] 
 
   return (
     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${styles}`}>
-      {confidence} confidence
+      {confidence} {label}
     </span>
   )
 }
 
-function MessageBubble({ message }: { message: Message }) {
+function MessageBubble({ message, demoLabel }: { message: Message; demoLabel: string }) {
   const isUser = message.role === "user"
   return (
-    <div
-      className={`flex ${isUser ? "justify-end" : "justify-start"}`}
-    >
+    <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
       <div
         className={`max-w-[85%] rounded-2xl px-4 py-3 sm:max-w-[70%] ${
           isUser
@@ -50,9 +42,7 @@ function MessageBubble({ message }: { message: Message }) {
       >
         {message.isDemoMode && (
           <div className="mb-2 flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1.5">
-            <span className="text-xs text-amber-700">
-              Demo mode — AI not connected. Set ANTHROPIC_API_KEY to enable.
-            </span>
+            <span className="text-xs text-amber-700">{demoLabel}</span>
           </div>
         )}
         <div className="whitespace-pre-wrap text-sm leading-relaxed">
@@ -60,7 +50,7 @@ function MessageBubble({ message }: { message: Message }) {
         </div>
         {message.confidence && (
           <div className="mt-2">
-            <ConfidenceChip confidence={message.confidence} />
+            <ConfidenceChip confidence={message.confidence} label="confidence" />
           </div>
         )}
       </div>
@@ -87,6 +77,10 @@ function LoadingBubble() {
 }
 
 export default function AskPage() {
+  const lang = useLang()
+  const T = translations[lang]
+  const A = T.ask
+
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState("")
   const [isLoading, setIsLoading] = useState(false)
@@ -129,8 +123,7 @@ export default function AskPage() {
     } catch {
       const errorMessage: Message = {
         role: "assistant",
-        content:
-          "Sorry, there was an error processing your question. Please try again.",
+        content: A.errorMsg,
       }
       setMessages((prev) => [...prev, errorMessage])
     } finally {
@@ -149,10 +142,8 @@ export default function AskPage() {
     <div className="flex h-[calc(100vh-7rem)] flex-col">
       {/* Header */}
       <div className="shrink-0 border-b border-slate-200 bg-white px-4 py-4 sm:px-6">
-        <h1 className="text-xl font-bold text-slate-900">Ask a policy question</h1>
-        <p className="mt-0.5 text-sm text-slate-500">
-          Evidence-based answers drawn from the policy database and research library.
-        </p>
+        <h1 className="text-xl font-bold text-slate-900">{A.title}</h1>
+        <p className="mt-0.5 text-sm text-slate-500">{A.subtitle}</p>
       </div>
 
       {/* Messages */}
@@ -160,11 +151,9 @@ export default function AskPage() {
         <div className="mx-auto max-w-3xl space-y-5">
           {isEmpty && (
             <div className="py-8 text-center">
-              <p className="mb-6 text-sm text-slate-500">
-                Ask anything about German policy — evidence, trade-offs, international comparisons.
-              </p>
+              <p className="mb-6 text-sm text-slate-500">{A.promptHint}</p>
               <div className="flex flex-wrap justify-center gap-2">
-                {SUGGESTED_QUESTIONS.map((q) => (
+                {A.suggestions.map((q) => (
                   <button
                     key={q}
                     onClick={() => sendMessage(q)}
@@ -178,7 +167,7 @@ export default function AskPage() {
           )}
 
           {messages.map((msg, i) => (
-            <MessageBubble key={i} message={msg} />
+            <MessageBubble key={i} message={msg} demoLabel={A.demoMode} />
           ))}
 
           {isLoading && <LoadingBubble />}
@@ -191,7 +180,7 @@ export default function AskPage() {
         <div className="mx-auto max-w-3xl">
           {!isEmpty && (
             <div className="mb-3 flex flex-wrap gap-2">
-              {SUGGESTED_QUESTIONS.slice(0, 3).map((q) => (
+              {A.suggestions.slice(0, 3).map((q) => (
                 <button
                   key={q}
                   onClick={() => sendMessage(q)}
@@ -207,7 +196,7 @@ export default function AskPage() {
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask a question about German policy..."
+              placeholder={A.placeholder}
               disabled={isLoading}
               className="flex-1 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-60"
             />
@@ -216,12 +205,10 @@ export default function AskPage() {
               disabled={isLoading || !input.trim()}
               className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Ask
+              {A.send}
             </button>
           </form>
-          <p className="mt-2 text-xs text-slate-400">
-            Responses are AI-generated and may be incorrect. Always verify with primary sources.
-          </p>
+          <p className="mt-2 text-xs text-slate-400">{A.disclaimer}</p>
         </div>
       </div>
     </div>

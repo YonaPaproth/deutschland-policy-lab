@@ -1,5 +1,13 @@
-import policies, { type Policy } from "@/data/policies"
+import rawPolicies, { type Policy } from "@/data/policies"
+import { policyTranslationsDe } from "@/data/policy-translations-de"
 import { calculatePriorityScore } from "@/lib/scoring"
+
+// Merge German translations into each policy object
+const policies: Policy[] = rawPolicies.map((p) => {
+  const de = policyTranslationsDe[p.id]
+  if (!de) return p
+  return { ...p, translations: { de } }
+})
 
 export function getAllPolicies(): Policy[] {
   return policies

@@ -1,3 +1,11 @@
+export interface PolicyTranslation {
+  title?: string
+  shortDescription?: string
+  problem?: string
+  objective?: string
+  intervention?: string
+}
+
 export interface Policy {
   id: string
   title: string
@@ -27,6 +35,9 @@ export interface Policy {
     abandonRecommendation: string[]
   }
   lastReviewed: string
+  translations?: {
+    de?: PolicyTranslation
+  }
 }
 
 const policies: Policy[] = [

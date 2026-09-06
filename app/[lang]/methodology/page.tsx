@@ -1,4 +1,5 @@
 import Link from "next/link"
+import { getLang, translations } from "@/lib/i18n/translations"
 
 const EVIDENCE_TYPES = [
   {
@@ -6,84 +7,108 @@ const EVIDENCE_TYPES = [
     color: "bg-green-100 text-green-800",
     description:
       "Empirically measured and independently verified. Examples: GDP growth rate, unemployment figures, PISA scores. Sourced from official statistics with known methodology.",
+    descriptionDe:
+      "Empirisch gemessen und unabhängig verifiziert. Beispiele: BIP-Wachstumsrate, Arbeitslosenzahlen, PISA-Ergebnisse. Aus offiziellen Statistiken mit bekannter Methodik.",
   },
   {
     type: "EVIDENCE",
     color: "bg-blue-100 text-blue-800",
     description:
       "Supported by peer-reviewed research or systematic review, but with some uncertainty about applicability to Germany. Includes causal estimates from natural experiments, RCTs, or meta-analyses.",
+    descriptionDe:
+      "Durch peer-reviewte Forschung oder systematische Übersichten gestützt, aber mit Unsicherheit über die Anwendbarkeit auf Deutschland. Umfasst kausale Schätzungen aus natürlichen Experimenten, RCTs oder Meta-Analysen.",
   },
   {
     type: "ASSUMPTION",
     color: "bg-yellow-100 text-yellow-800",
     description:
       "A working hypothesis based on partial evidence. Used when direct evidence is unavailable but the assumption is plausible given adjacent evidence. Explicitly flagged.",
+    descriptionDe:
+      "Eine Arbeitshypothese auf Basis partieller Evidenz. Wird verwendet, wenn direkte Evidenz fehlt, die Annahme aber plausibel ist. Explizit gekennzeichnet.",
   },
   {
     type: "PROPOSAL",
     color: "bg-slate-100 text-slate-800",
     description:
       "A policy intervention that has been proposed but not yet tested. May have supporting theory or analogy from other contexts. Requires validation.",
+    descriptionDe:
+      "Eine Politikintervention, die vorgeschlagen, aber noch nicht erprobt wurde. Kann durch Theorie oder Analogien aus anderen Kontexten gestützt sein. Erfordert Validierung.",
   },
   {
     type: "UNCERTAINTY",
     color: "bg-orange-100 text-orange-800",
     description:
       "An area where evidence is genuinely contested, insufficient, or absent. Does not represent ignorance but known unknowns.",
+    descriptionDe:
+      "Ein Bereich, in dem Evidenz tatsächlich umstritten, unzureichend oder nicht vorhanden ist. Kein Unwissen, sondern bekannte Unbekannte.",
   },
 ]
 
 const EVIDENCE_STRENGTH_LEVELS = [
   {
     level: "High",
+    levelDe: "Hoch",
     dot: "bg-green-600",
     description:
-      "Multiple high-quality studies with consistent findings; cross-country evidence supports transferability; mechanisms well understood. Example: interventions backed by multiple RCTs or large natural experiments.",
+      "Multiple high-quality studies with consistent findings; cross-country evidence supports transferability; mechanisms well understood.",
+    descriptionDe:
+      "Mehrere hochwertige Studien mit konsistenten Befunden; länderübergreifende Evidenz stützt die Übertragbarkeit; Mechanismen gut verstanden.",
   },
   {
     level: "Medium",
+    levelDe: "Mittel",
     dot: "bg-blue-500",
     description:
       "Some rigorous evidence, but gaps in generalisability, sample size, or replication. Cross-country analogies exist but with meaningful contextual differences.",
+    descriptionDe:
+      "Einige rigorose Evidenz, aber Lücken bei Generalisierbarkeit, Stichprobengröße oder Replikation. Länderübergreifende Analogien bestehen, aber mit wesentlichen Kontextunterschieden.",
   },
   {
     level: "Low",
+    levelDe: "Gering",
     dot: "bg-yellow-500",
     description:
       "Limited rigorous evidence; primarily observational studies or single-country findings. Hypothesis is theoretically grounded but empirically weak.",
+    descriptionDe:
+      "Begrenzte rigorose Evidenz; primär Beobachtungsstudien oder Einzelländerbefunde. Hypothese ist theoretisch fundiert, aber empirisch schwach.",
   },
   {
     level: "Very Low",
+    levelDe: "Sehr gering",
     dot: "bg-slate-400",
     description:
       "Largely speculative. Based on theoretical reasoning, expert opinion, or analogy from very different contexts. Treat as early-stage hypothesis only.",
+    descriptionDe:
+      "Überwiegend spekulativ. Basiert auf theoretischen Überlegungen, Expertenmeinungen oder Analogien aus sehr unterschiedlichen Kontexten. Nur als Frühphasenhypothese behandeln.",
   },
 ]
 
-export default function MethodologyPage() {
+export default async function MethodologyPage({
+  params,
+}: {
+  params: Promise<{ lang: string }>
+}) {
+  const { lang: langStr } = await params
+  const lang = getLang(langStr)
+  const T = translations[lang]
+  const M = T.methodology
+  const isDe = lang === "de"
+
   return (
     <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6 lg:px-8">
       <nav className="mb-4 flex items-center gap-2 text-sm text-slate-500">
-        <Link href="/" className="hover:text-slate-700">Home</Link>
+        <Link href={`/${lang}`} className="hover:text-slate-700">{T.common.home}</Link>
         <span>/</span>
-        <span className="text-slate-900">Methodology</span>
+        <span className="text-slate-900">{T.nav.methodology}</span>
       </nav>
 
-      <h1 className="mb-3 text-3xl font-bold text-slate-900">Evidence Framework</h1>
-      <p className="mb-10 max-w-2xl text-base leading-relaxed text-slate-600">
-        How we classify evidence, assess confidence, score policies, and decide what would change
-        our minds.
-      </p>
+      <h1 className="mb-3 text-3xl font-bold text-slate-900">{M.title}</h1>
+      <p className="mb-10 max-w-2xl text-base leading-relaxed text-slate-600">{M.subtitle}</p>
 
       {/* Evidence classification */}
       <section className="mb-12">
-        <h2 className="mb-4 text-xl font-semibold text-slate-900">
-          1. Evidence classification
-        </h2>
-        <p className="mb-5 text-sm leading-relaxed text-slate-600">
-          Every claim in a policy profile is assigned one of five types. This forces explicit
-          distinction between verified facts and working hypotheses.
-        </p>
+        <h2 className="mb-4 text-xl font-semibold text-slate-900">{M.evidenceClassTitle}</h2>
+        <p className="mb-5 text-sm leading-relaxed text-slate-600">{M.evidenceClassDesc}</p>
         <div className="space-y-3">
           {EVIDENCE_TYPES.map((item) => (
             <div
@@ -95,7 +120,9 @@ export default function MethodologyPage() {
               >
                 {item.type}
               </span>
-              <p className="text-sm leading-relaxed text-slate-700">{item.description}</p>
+              <p className="text-sm leading-relaxed text-slate-700">
+                {isDe ? item.descriptionDe : item.description}
+              </p>
             </div>
           ))}
         </div>
@@ -103,13 +130,8 @@ export default function MethodologyPage() {
 
       {/* Evidence strength */}
       <section className="mb-12">
-        <h2 className="mb-4 text-xl font-semibold text-slate-900">
-          2. Evidence strength
-        </h2>
-        <p className="mb-5 text-sm leading-relaxed text-slate-600">
-          Each policy is assigned an overall evidence strength rating based on the quality, quantity,
-          and generalisability of relevant studies.
-        </p>
+        <h2 className="mb-4 text-xl font-semibold text-slate-900">{M.evidenceStrengthTitle}</h2>
+        <p className="mb-5 text-sm leading-relaxed text-slate-600">{M.evidenceStrengthDesc}</p>
         <div className="space-y-3">
           {EVIDENCE_STRENGTH_LEVELS.map((item) => (
             <div
@@ -121,9 +143,13 @@ export default function MethodologyPage() {
                   className={`h-2.5 w-2.5 rounded-full ${item.dot}`}
                   aria-hidden="true"
                 />
-                <span className="text-sm font-medium text-slate-700">{item.level}</span>
+                <span className="text-sm font-medium text-slate-700">
+                  {isDe ? item.levelDe : item.level}
+                </span>
               </div>
-              <p className="text-sm leading-relaxed text-slate-600">{item.description}</p>
+              <p className="text-sm leading-relaxed text-slate-600">
+                {isDe ? item.descriptionDe : item.description}
+              </p>
             </div>
           ))}
         </div>
@@ -131,19 +157,10 @@ export default function MethodologyPage() {
 
       {/* Confidence */}
       <section className="mb-12">
-        <h2 className="mb-4 text-xl font-semibold text-slate-900">
-          3. Confidence percentage
-        </h2>
-        <p className="mb-4 text-sm leading-relaxed text-slate-600">
-          The confidence percentage (0–100%) is a synthetic judgment combining:
-        </p>
+        <h2 className="mb-4 text-xl font-semibold text-slate-900">{M.confidenceTitle}</h2>
+        <p className="mb-4 text-sm leading-relaxed text-slate-600">{M.confidenceDesc}</p>
         <ul className="mb-4 space-y-2 text-sm text-slate-700">
-          {[
-            "Quality and consistency of the underlying evidence base",
-            "Transferability of international examples to the German context",
-            "Degree of expert consensus on mechanism and effect size",
-            "Remaining uncertainty about implementation and politics",
-          ].map((item) => (
+          {M.confidenceItems.map((item) => (
             <li key={item} className="flex items-start gap-2">
               <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" />
               {item}
@@ -152,24 +169,16 @@ export default function MethodologyPage() {
         </ul>
         <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4">
           <p className="text-sm text-yellow-900">
-            <span className="font-semibold">Important:</span> Confidence percentages are
-            illustrative expert judgments, not probabilistic model outputs. They should be read
-            as rough ordinal indicators (&ldquo;high / medium / low&rdquo;) rather than precise
-            probabilities.
+            <span className="font-semibold">{isDe ? "Wichtig:" : "Important:"}</span>{" "}
+            {M.confidenceNote}
           </p>
         </div>
       </section>
 
       {/* Priority score formula */}
       <section className="mb-12">
-        <h2 className="mb-4 text-xl font-semibold text-slate-900">
-          4. Priority score formula
-        </h2>
-        <p className="mb-4 text-sm leading-relaxed text-slate-600">
-          The priority score is an experimental ranking tool. It combines impact, evidence quality,
-          confidence, and implementation difficulty into a single number (0–100). It is explicitly
-          labelled as experimental and should not be used as a direct policy recommendation.
-        </p>
+        <h2 className="mb-4 text-xl font-semibold text-slate-900">{M.priorityTitle}</h2>
+        <p className="mb-4 text-sm leading-relaxed text-slate-600">{M.priorityDesc}</p>
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-5 font-mono text-sm">
           <p className="mb-2 text-slate-700">
             <span className="font-semibold text-slate-900">raw</span> = (expectedImpact &times; evidenceWeight &times; confidence) / implementationDifficulty
@@ -185,41 +194,15 @@ export default function MethodologyPage() {
             <p>max raw = (5 &times; 1.0 &times; 1.0) / 1 = 5 &rarr; normalised to 100</p>
           </div>
         </div>
-        <p className="mt-3 text-xs italic text-slate-400">
-          Experimental prioritisation model — not a policy recommendation
-        </p>
+        <p className="mt-3 text-xs italic text-slate-400">{M.priorityNote}</p>
       </section>
 
       {/* What Would Change Our Mind */}
       <section className="mb-12">
-        <h2 className="mb-4 text-xl font-semibold text-slate-900">
-          5. &ldquo;What would change our mind?&rdquo;
-        </h2>
-        <p className="mb-4 text-sm leading-relaxed text-slate-600">
-          Each policy profile includes an explicit section on what evidence would update our
-          assessment. This section has three parts:
-        </p>
+        <h2 className="mb-4 text-xl font-semibold text-slate-900">{M.whatTitle}</h2>
+        <p className="mb-4 text-sm leading-relaxed text-slate-600">{M.whatDesc}</p>
         <div className="grid gap-4 sm:grid-cols-3">
-          {[
-            {
-              icon: "↑",
-              color: "green",
-              title: "Would increase confidence",
-              desc: "Evidence that would make us more confident the intervention would work as hypothesised.",
-            },
-            {
-              icon: "↓",
-              color: "yellow",
-              title: "Would decrease confidence",
-              desc: "Findings that would weaken our assessment without necessarily abandoning the direction.",
-            },
-            {
-              icon: "✕",
-              color: "red",
-              title: "Would abandon recommendation",
-              desc: "Evidence or findings so contrary that the intervention should be dropped or fundamentally redesigned.",
-            },
-          ].map((item) => (
+          {M.whatItems.map((item) => (
             <div
               key={item.title}
               className="rounded-lg border border-slate-200 bg-white p-4"
@@ -236,26 +219,18 @@ export default function MethodologyPage() {
             </div>
           ))}
         </div>
-        <p className="mt-4 text-sm leading-relaxed text-slate-600">
-          This structure reflects a Popperian commitment to falsifiability: good policy analysis
-          should specify in advance what would constitute counter-evidence, not just accumulate
-          supporting evidence. It also guards against motivated reasoning.
-        </p>
+        <p className="mt-4 text-sm leading-relaxed text-slate-600">{M.whatNote}</p>
       </section>
 
       {/* Research principles link */}
       <div className="rounded-xl border border-slate-200 bg-slate-50 p-6">
-        <h3 className="mb-2 text-sm font-semibold text-slate-900">Research Principles</h3>
-        <p className="mb-3 text-sm leading-relaxed text-slate-600">
-          All analysis follows a set of non-partisan research principles: separate evidence from
-          opinion, disclose uncertainty, present counterarguments, avoid party framing, and cite
-          sources.
-        </p>
+        <h3 className="mb-2 text-sm font-semibold text-slate-900">{M.researchTitle}</h3>
+        <p className="mb-3 text-sm leading-relaxed text-slate-600">{M.researchDesc}</p>
         <Link
-          href="/about"
+          href={`/${lang}/about`}
           className="text-sm font-medium text-blue-600 hover:underline"
         >
-          Read about the project &rarr;
+          {M.researchLink}
         </Link>
       </div>
     </div>

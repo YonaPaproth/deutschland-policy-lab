@@ -1,6 +1,7 @@
 interface ConfidenceBarProps {
   confidence: number | "unknown"
   className?: string
+  lang?: "de" | "en"
 }
 
 function getBarColor(value: number): string {
@@ -15,14 +16,15 @@ function getTextColor(value: number): string {
   return "text-red-600"
 }
 
-export default function ConfidenceBar({ confidence, className = "" }: ConfidenceBarProps) {
+export default function ConfidenceBar({ confidence, className = "", lang = "en" }: ConfidenceBarProps) {
   const isUnknown = confidence === "unknown"
   const value = isUnknown ? 0 : confidence
+  const label = lang === "de" ? "Konfidenz" : "Confidence"
 
   return (
     <div className={`w-full ${className}`}>
       <div className="mb-1 flex items-center justify-between">
-        <span className="text-xs font-medium text-slate-500">Confidence</span>
+        <span className="text-xs font-medium text-slate-500">{label}</span>
         <span
           className={`text-xs font-semibold tabular-nums ${
             isUnknown ? "text-slate-400" : getTextColor(value)

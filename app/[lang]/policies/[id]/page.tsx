@@ -6,54 +6,52 @@ import ConfidenceBar from "@/components/confidence-bar"
 import { EvidenceStrengthBadge } from "@/components/evidence-badge"
 import WhatWouldChangeMind from "@/components/what-would-change-mind"
 import PriorityScore from "@/components/priority-score"
+import { getLang, translations } from "@/lib/i18n/translations"
 
 export function generateStaticParams() {
-  return getAllPolicies().map((p) => ({ id: p.id }))
+  const langs = ["de", "en"]
+  return langs.flatMap((lang) =>
+    getAllPolicies().map((p) => ({ lang, id: p.id }))
+  )
 }
 
-export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params
+export async function generateMetadata({ params }: { params: Promise<{ lang: string; id: string }> }) {
+  const { id, lang: langStr } = await params
   const policy = getPolicyById(id)
   if (!policy) return {}
+  const lang = getLang(langStr)
+  const deTrans = policy.translations?.de
+  const title = lang === "de" && deTrans?.title ? deTrans.title : policy.title
   return {
-    title: `${policy.title} — Deutschland Policy Lab`,
-    description: policy.shortDescription,
+    title: `${title} — Deutschland Policy Lab`,
+    description: lang === "de" && deTrans?.shortDescription ? deTrans.shortDescription : policy.shortDescription,
   }
 }
 
-const DOMAIN_LABELS: Record<string, string> = {
-  "state-capacity": "State Capacity",
-  housing: "Housing",
-  labour: "Labour",
-  migration: "Migration",
-  innovation: "Innovation",
-  energy: "Energy",
-  education: "Education",
-  "economic-growth": "Economic Growth",
-  pensions: "Pensions",
-  defence: "Defence",
-}
-
-const STATUS_LABELS: Record<string, string> = {
-  idea: "Idea",
-  researching: "Researching",
-  "evidence-supported": "Evidence Supported",
-  pilot: "Pilot",
-  implemented: "Implemented",
-  evaluated: "Evaluated",
-}
-
-const COST_LABELS: Record<string, string> = {
+const COST_LABELS_EN: Record<string, string> = {
   low: "Low",
   medium: "Medium",
   high: "High",
   unknown: "Unknown",
 }
 
-const TIME_LABELS: Record<string, string> = {
+const COST_LABELS_DE: Record<string, string> = {
+  low: "Niedrig",
+  medium: "Mittel",
+  high: "Hoch",
+  unknown: "Unbekannt",
+}
+
+const TIME_LABELS_EN: Record<string, string> = {
   short: "Short (< 2 yrs)",
   medium: "Medium (2–5 yrs)",
   long: "Long (5+ yrs)",
+}
+
+const TIME_LABELS_DE: Record<string, string> = {
+  short: "Kurzfristig (< 2 J.)",
+  medium: "Mittelfristig (2–5 J.)",
+  long: "Langfristig (5+ J.)",
 }
 
 function Stars({ value, max = 5, label }: { value: number; max?: number; label: string }) {
@@ -101,25 +99,42 @@ function BulletList({ items }: { items: string[] }) {
 export default async function PolicyDetailPage({
   params,
 }: {
-  params: Promise<{ id: string }>
+  params: Promise<{ lang: string; id: string }>
 }) {
-  const { id } = await params
+  const { lang: langStr, id } = await params
+  const lang = getLang(langStr)
+  const T = translations[lang]
+  const D = T.detail
+  const isDe = lang === "de"
+
   const policy = getPolicyById(id)
   if (!policy) notFound()
+
+  const deTrans = policy.translations?.de
+  const title = isDe && deTrans?.title ? deTrans.title : policy.title
+  const shortDescription = isDe && deTrans?.shortDescription ? deTrans.shortDescription : policy.shortDescription
+  const problem = isDe && deTrans?.problem ? deTrans.problem : policy.problem
+  const objective = isDe && deTrans?.objective ? deTrans.objective : policy.objective
+  const intervention = isDe && deTrans?.intervention ? deTrans.intervention : policy.intervention
 
   const sources = getSourcesForPolicy(policy.sources)
   const isLowEvidence =
     policy.evidenceStrength === "low" || policy.evidenceStrength === "very-low"
 
+  const DOMAIN_LABELS = isDe ? T.domains : translations.en.domains
+  const STATUS_LABELS = isDe ? T.status : translations.en.status
+  const COST_LABELS = isDe ? COST_LABELS_DE : COST_LABELS_EN
+  const TIME_LABELS = isDe ? TIME_LABELS_DE : TIME_LABELS_EN
+
   return (
     <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
       {/* Breadcrumb */}
       <nav className="mb-6 flex items-center gap-2 text-sm text-slate-500">
-        <Link href="/" className="hover:text-slate-700">Home</Link>
+        <Link href={`/${lang}`} className="hover:text-slate-700">{T.common.home}</Link>
         <span>/</span>
-        <Link href="/policies" className="hover:text-slate-700">Policies</Link>
+        <Link href={`/${lang}/policies`} className="hover:text-slate-700">{T.nav.policies}</Link>
         <span>/</span>
-        <span className="text-slate-900">{policy.title}</span>
+        <span className="text-slate-900">{title}</span>
       </nav>
 
       {/* Low-evidence disclaimer */}
@@ -128,11 +143,10 @@ export default async function PolicyDetailPage({
           <span className="mt-0.5 shrink-0 text-lg" aria-hidden="true">⚠</span>
           <div>
             <p className="text-sm font-semibold text-yellow-900">
-              This is a hypothesis, not a recommendation.
+              {D.hypothesisWarning}
             </p>
             <p className="mt-0.5 text-sm text-yellow-800">
-              Evidence strength is {policy.evidenceStrength}. Treat all analysis on this page as
-              exploratory. Do not use in policy briefs without expert review.
+              {D.hypothesisDetail.replace("{{strength}}", T.evidence[policy.evidenceStrength])}
             </p>
           </div>
         </div>
@@ -153,37 +167,37 @@ export default async function PolicyDetailPage({
                 {STATUS_LABELS[policy.status]}
               </span>
             </div>
-            <h1 className="text-3xl font-bold leading-snug text-slate-900">{policy.title}</h1>
+            <h1 className="text-3xl font-bold leading-snug text-slate-900">{title}</h1>
             <p className="mt-3 text-base leading-relaxed text-slate-600">
-              {policy.shortDescription}
+              {shortDescription}
             </p>
             <p className="mt-3 text-xs text-slate-400">
-              Last reviewed: {policy.lastReviewed} &middot; Illustrative — requires evidence review
+              {D.lastReviewed}: {policy.lastReviewed} &middot; {D.illustrative}
             </p>
           </div>
 
           {/* Problem */}
           <section>
-            <SectionHeading>Problem</SectionHeading>
-            <p className="text-sm leading-relaxed text-slate-700">{policy.problem}</p>
+            <SectionHeading>{D.problem}</SectionHeading>
+            <p className="text-sm leading-relaxed text-slate-700">{problem}</p>
           </section>
 
           {/* Objective */}
           <section>
-            <SectionHeading>Objective</SectionHeading>
-            <p className="text-sm leading-relaxed text-slate-700">{policy.objective}</p>
+            <SectionHeading>{D.objective}</SectionHeading>
+            <p className="text-sm leading-relaxed text-slate-700">{objective}</p>
           </section>
 
           {/* Intervention Hypothesis */}
           <section>
-            <SectionHeading>Intervention Hypothesis</SectionHeading>
-            <p className="text-sm leading-relaxed text-slate-700">{policy.intervention}</p>
+            <SectionHeading>{D.intervention}</SectionHeading>
+            <p className="text-sm leading-relaxed text-slate-700">{intervention}</p>
           </section>
 
           {/* International Examples */}
           {policy.internationalExamples.length > 0 && (
             <section>
-              <SectionHeading>International Examples</SectionHeading>
+              <SectionHeading>{D.examples}</SectionHeading>
               <div className="space-y-4">
                 {policy.internationalExamples.map((ex, i) => (
                   <div
@@ -198,7 +212,7 @@ export default async function PolicyDetailPage({
                     </p>
                     <div className="flex items-start gap-2">
                       <span className="mt-0.5 shrink-0 text-xs font-semibold uppercase tracking-wide text-green-600">
-                        Outcome
+                        {D.outcome}
                       </span>
                       <p className="text-sm leading-relaxed text-slate-600">{ex.outcome}</p>
                     </div>
@@ -211,11 +225,11 @@ export default async function PolicyDetailPage({
           {/* Risks & Trade-offs */}
           <div className="grid gap-6 sm:grid-cols-2">
             <section>
-              <SectionHeading>Risks</SectionHeading>
+              <SectionHeading>{D.risks}</SectionHeading>
               <BulletList items={policy.risks} />
             </section>
             <section>
-              <SectionHeading>Trade-offs</SectionHeading>
+              <SectionHeading>{D.tradeoffs}</SectionHeading>
               <BulletList items={policy.tradeoffs} />
             </section>
           </div>
@@ -223,7 +237,7 @@ export default async function PolicyDetailPage({
           {/* Counterarguments */}
           {policy.counterarguments.length > 0 && (
             <section>
-              <SectionHeading>Counterarguments</SectionHeading>
+              <SectionHeading>{D.counterarguments}</SectionHeading>
               <BulletList items={policy.counterarguments} />
             </section>
           )}
@@ -231,7 +245,7 @@ export default async function PolicyDetailPage({
           {/* Open Questions */}
           {policy.openQuestions.length > 0 && (
             <section>
-              <SectionHeading>Open Questions</SectionHeading>
+              <SectionHeading>{D.openQuestions}</SectionHeading>
               <BulletList items={policy.openQuestions} />
             </section>
           )}
@@ -239,19 +253,19 @@ export default async function PolicyDetailPage({
           {/* KPIs */}
           {policy.kpis.length > 0 && (
             <section>
-              <SectionHeading>Key Performance Indicators</SectionHeading>
+              <SectionHeading>{D.kpis}</SectionHeading>
               <div className="overflow-x-auto rounded-lg border border-slate-200">
                 <table className="min-w-full divide-y divide-slate-100 text-sm">
                   <thead className="bg-slate-50">
                     <tr>
                       <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        Metric
+                        {D.kpiMetric}
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        Baseline
+                        {D.kpiBaseline}
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        Target
+                        {D.kpiTarget}
                       </th>
                     </tr>
                   </thead>
@@ -270,19 +284,17 @@ export default async function PolicyDetailPage({
                   </tbody>
                 </table>
               </div>
-              <p className="mt-2 text-xs italic text-slate-400">
-                All KPI values are illustrative — requires evidence review
-              </p>
+              <p className="mt-2 text-xs italic text-slate-400">{D.kpiNote}</p>
             </section>
           )}
 
           {/* What Would Change Our Mind */}
-          <WhatWouldChangeMind whatWouldChangeOurMind={policy.whatWouldChangeOurMind} />
+          <WhatWouldChangeMind whatWouldChangeOurMind={policy.whatWouldChangeOurMind} lang={lang} />
 
           {/* Sources */}
           {sources.length > 0 && (
             <section>
-              <SectionHeading>Sources</SectionHeading>
+              <SectionHeading>{D.sources}</SectionHeading>
               <div className="space-y-3">
                 {sources.map((src) => (
                   <div
@@ -303,7 +315,7 @@ export default async function PolicyDetailPage({
                           rel="noopener noreferrer"
                           className="shrink-0 text-xs font-medium text-blue-600 hover:underline"
                         >
-                          View source &rarr;
+                          {D.sourceView}
                         </a>
                       )}
                     </div>
@@ -326,35 +338,36 @@ export default async function PolicyDetailPage({
                 confidence: policy.confidence,
                 implementationDifficulty: policy.implementationDifficulty,
               }}
+              lang={lang}
             />
           </div>
 
           {/* Stats */}
           <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="space-y-4">
-              <Stars value={policy.expectedImpact} label="Impact" />
-              <Stars value={6 - policy.implementationDifficulty} label="Ease of implementation" />
+              <Stars value={policy.expectedImpact} label={D.impact} />
+              <Stars value={6 - policy.implementationDifficulty} label={D.ease} />
 
               <div>
-                <span className="mb-1 block text-xs text-slate-500">Estimated cost</span>
+                <span className="mb-1 block text-xs text-slate-500">{D.estimatedCost}</span>
                 <span className="text-sm font-medium text-slate-900">
                   {COST_LABELS[policy.estimatedCost]}
                 </span>
               </div>
 
               <div>
-                <span className="mb-1 block text-xs text-slate-500">Time to impact</span>
+                <span className="mb-1 block text-xs text-slate-500">{D.timeToImpact}</span>
                 <span className="text-sm font-medium text-slate-900">
                   {TIME_LABELS[policy.timeToImpact]}
                 </span>
               </div>
 
               <div>
-                <span className="mb-1 block text-xs text-slate-500">Evidence strength</span>
+                <span className="mb-1 block text-xs text-slate-500">{T.policies.filterEvidence}</span>
                 <EvidenceStrengthBadge evidenceStrength={policy.evidenceStrength} />
               </div>
 
-              <ConfidenceBar confidence={policy.confidence} />
+              <ConfidenceBar confidence={policy.confidence} lang={lang} />
             </div>
           </div>
 
@@ -362,7 +375,7 @@ export default async function PolicyDetailPage({
           {policy.affectedGroups.length > 0 && (
             <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
               <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Affected groups
+                {D.affectedGroups}
               </h3>
               <div className="flex flex-wrap gap-1.5">
                 {policy.affectedGroups.map((g) => (
@@ -379,17 +392,17 @@ export default async function PolicyDetailPage({
 
           {/* Compare button */}
           <Link
-            href={`/compare?ids=${policy.id}`}
+            href={`/${lang}/compare?ids=${policy.id}`}
             className="block w-full rounded-lg border border-slate-200 py-2.5 text-center text-sm font-medium text-slate-600 transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
           >
-            Compare this policy
+            {D.compareThis}
           </Link>
 
           <Link
-            href="/policies"
+            href={`/${lang}/policies`}
             className="block text-center text-xs text-slate-500 hover:text-slate-700"
           >
-            &larr; Back to all policies
+            {D.backToAll}
           </Link>
         </aside>
       </div>

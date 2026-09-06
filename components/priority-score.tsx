@@ -8,6 +8,7 @@ interface PriorityScoreProps {
     implementationDifficulty: number
   }
   className?: string
+  lang?: "de" | "en"
 }
 
 function getScoreColor(score: number): string {
@@ -22,8 +23,10 @@ function getScoreRingColor(score: number): string {
   return "ring-red-200"
 }
 
-export default function PriorityScore({ policy, className = "" }: PriorityScoreProps) {
+export default function PriorityScore({ policy, className = "", lang = "en" }: PriorityScoreProps) {
   const score = calculatePriorityScore(policy)
+  const label = lang === "de" ? "Prioritätsscore" : "Priority Score"
+  const experimental = lang === "de" ? "Experimentell" : "Experimental"
 
   return (
     <div className={`flex flex-col items-center ${className}`}>
@@ -35,12 +38,12 @@ export default function PriorityScore({ policy, className = "" }: PriorityScoreP
         </span>
         <span className="text-[9px] font-medium uppercase tracking-wide text-slate-400">/ 100</span>
       </div>
-      <span className="mt-1 text-xs font-medium text-slate-600">Priority Score</span>
+      <span className="mt-1 text-xs font-medium text-slate-600">{label}</span>
       <span
         className="mt-0.5 text-center text-[10px] leading-tight text-slate-400"
         title={SCORING_LABEL}
       >
-        Experimental
+        {experimental}
       </span>
     </div>
   )
