@@ -1,5 +1,6 @@
 import Link from "next/link"
 import { getLang, translations } from "@/lib/i18n/translations"
+import { HOUSING_COST_OVERBURDEN_2025 } from "@/lib/housing-data"
 
 type DomainStatus = "on-track" | "off-track" | "unknown"
 
@@ -25,10 +26,10 @@ const DOMAIN_OBJECTIVES: DomainObjective[] = [
   },
   {
     domain: "housing",
-    current: "~400,000 new units/year",
-    milestone2030: "450,000 new units/year",
-    target2036: "500,000 new units/year",
-    unit: "new residential units completed per year",
+    current: "11.2% housing cost overburden (2025, Eurostat)",
+    milestone2030: "8% housing cost overburden",
+    target2036: "≤6% — level of Austria & Netherlands",
+    unit: "% of households spending >40% of income on housing. Best: Finland 4.7%, Austria 6.1%, Netherlands 6.5%",
     status: "off-track",
     confidence: "illustrative",
   },
@@ -224,6 +225,54 @@ export default async function Germany2036Page({
             </div>
           )
         })}
+      </div>
+
+      {/* Housing Benchmark — real Eurostat data */}
+      <div className="mt-10 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="mb-5 flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">
+              Housing Cost Overburden — International Benchmark
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">
+              % of households spending more than 40% of income on housing.
+              Lower is better. <strong>Real data</strong> — Source: Eurostat EU-SILC.
+            </p>
+          </div>
+          <span className="shrink-0 rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800">
+            Live data
+          </span>
+        </div>
+        <div className="space-y-2.5">
+          {HOUSING_COST_OVERBURDEN_2025.sort((a, b) => a.value - b.value).map((d) => {
+            const isGermany = d.countryCode === "DE"
+            const maxVal = 25
+            const pct = Math.round((d.value / maxVal) * 100)
+            return (
+              <div key={d.countryCode} className={`flex items-center gap-3 rounded-lg px-3 py-2 ${isGermany ? "bg-blue-50 ring-1 ring-blue-200" : ""}`}>
+                <span className={`w-28 shrink-0 text-sm ${isGermany ? "font-semibold text-blue-900" : "text-slate-600"}`}>
+                  {d.country}
+                </span>
+                <div className="flex-1">
+                  <div className="h-5 w-full overflow-hidden rounded-full bg-slate-100">
+                    <div
+                      className={`h-full rounded-full transition-all ${isGermany ? "bg-blue-500" : "bg-slate-300"}`}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                </div>
+                <span className={`w-16 shrink-0 text-right text-sm ${isGermany ? "font-bold text-blue-900" : "text-slate-600"}`}>
+                  {d.value.toFixed(1)}% ({d.year})
+                </span>
+              </div>
+            )
+          })}
+        </div>
+        <p className="mt-4 text-xs text-slate-400">
+          Germany (11.2%) performs worse than Austria (6.1%), France (6.4%), and Netherlands (6.5%).
+          Target 2036: reduce to ≤6% — the level of the best-performing large EU economies.
+          Source: {HOUSING_COST_OVERBURDEN_2025[0].source}.
+        </p>
       </div>
 
       {/* Methodology note */}
