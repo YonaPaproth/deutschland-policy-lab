@@ -1,172 +1,412 @@
-# Architecture
+# Data Architecture — Deutschland Policy Lab
 
-## Tech Stack
-
-| Layer | Technology | Notes |
-|-------|-----------|-------|
-| Framework | Next.js 15 (App Router) | Server components, API routes |
-| Language | TypeScript 5 (strict mode) | End-to-end type safety |
-| Styling | Tailwind CSS 4 | Utility-first, no component library dependency |
-| AI | Anthropic Claude (via `@anthropic-ai/sdk`) | Optional — app works in demo mode without an API key |
-| Database | None | All policy data is static TypeScript files |
-| Deployment | Vercel (recommended) or any Node.js host | `npm run build` produces a standard Next.js output |
-
-No database, no ORM, no authentication layer. The application is deliberately simple: policy data lives in version-controlled TypeScript files, which means every change is auditable and reversible via git.
+This document describes the full data architecture of DPL, covering three storage layers, the ingestion agent design, source priorities, and the relationship to the BASt reference architecture.
 
 ---
 
-## Component Diagram
+## Overview
+
+DPL uses a **three-layer architecture**: raw immutable storage → structured Iceberg tables → semantic vector store. Data flows strictly downward; upper layers never write back to lower ones.
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        Browser / Client                         │
-└────────────────────────────┬────────────────────────────────────┘
-                             │ HTTP
-┌────────────────────────────▼────────────────────────────────────┐
-│                       Next.js App Router                        │
-│                                                                 │
-│  app/                                                           │
-│  ├── page.tsx              ← Policy list / homepage             │
-│  ├── layout.tsx            ← Root layout, nav                   │
-│  └── api/                                                       │
-│      └── ask/route.ts      ← AI Q&A endpoint (streaming)        │
-│                                                                 │
-│  components/                                                    │
-│  ├── nav.tsx               ← Site navigation                    │
-│  ├── policy-card.tsx       ← Policy summary card                │
-│  ├── evidence-badge.tsx    ← Evidence strength indicator        │
-│  ├── confidence-bar.tsx    ← Confidence percentage bar          │
-│  ├── priority-score.tsx    ← Computed priority display          │
-│  └── what-would-change-mind.tsx  ← Falsifiability section       │
-└───────────┬───────────────────────────────┬─────────────────────┘
-            │                               │
-┌───────────▼──────────┐      ┌─────────────▼──────────────────┐
-│      lib/            │      │          data/                  │
-│                      │      │                                 │
-│  policies.ts         │◄─────│  policies.ts   ← 18 policies   │
-│  (query helpers)     │      │  sources.ts    ← bibliography  │
-│                      │      └─────────────────────────────────┘
-│  scoring.ts          │
-│  (priority formula)  │      ┌─────────────────────────────────┐
-│                      │      │        External                 │
-│  ai/                 │─────►│  Anthropic API (claude-*)       │
-│  (prompt builder,    │      │  (optional, streaming)          │
-│   context assembly)  │      └─────────────────────────────────┘
-└──────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                          DATA SOURCES                                   │
+│  Destatis Genesis  │  OECD.Stat  │  Bundestag DIP  │  arXiv  │ EUR-Lex │
+└──────────┬─────────┴──────┬──────┴────────┬─────────┴────┬────┴────┬───┘
+           │                │               │              │         │
+           ▼                ▼               ▼              ▼         ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    LAYER 1 — RAW STORAGE (S3)                           │
+│                                                                         │
+│  s3://dpl-data/raw/destatis/YYYY/MM/   (JSON API responses)            │
+│  s3://dpl-data/raw/oecd/YYYY/MM/       (SDMX/JSON)                     │
+│  s3://dpl-data/raw/bundestag/YYYY/MM/  (JSON DIP API)                  │
+│  s3://dpl-data/raw/arxiv/YYYY/MM/      (XML/PDF)                       │
+│  s3://dpl-data/raw/eurlex/YYYY/MM/     (HTML/PDF)                      │
+│                                                                         │
+│  Immutable. Never deleted. Versioned via Iceberg snapshots.             │
+└────────────────────────────┬────────────────────────────────────────────┘
+                             │  Ingestion Agents (parse + deduplicate)
+                             ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│               LAYER 2 — STRUCTURED STORAGE (Apache Iceberg)             │
+│                                                                         │
+│  documents table     ← text documents (Bundestag, arXiv, EUR-Lex)      │
+│  indicators table    ← time series (Destatis, OECD)                    │
+│  policy_links table  ← document ↔ policy relevance scores              │
+│                                                                         │
+│  Query: DuckDB (local dev) / AWS Athena (production)                    │
+└──────────┬─────────────────────────────────────────────────────────────┘
+           │  Embedding agents (chunk + embed)
+           ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│               LAYER 3 — VECTOR STORE (Semantic Search)                  │
+│                                                                         │
+│  Text chunks embedded via OpenAI text-embedding-3-small or Cohere      │
+│  Stored in: pgvector (PostgreSQL) — local dev                          │
+│             Pinecone — production                                       │
+│                                                                         │
+│  Powers: /ask endpoint (RAG), Module I (Advanced RAG)                  │
+└────────────────────────────┬────────────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                     APPLICATION LAYER (Next.js)                         │
+│                                                                         │
+│  /ask          ← RAG: retrieve relevant chunks → Claude                 │
+│  /policies     ← Static TypeScript data (current v0.1)                 │
+│  /research     ← Indicator charts from Iceberg/DuckDB                  │
+│  /api/v1       ← Module J: Open REST API for researchers               │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Data Flow
+## Layer 1 — Raw Storage (S3)
+
+Identical approach to BASt (Bundesanstalt für Straßenwesen) data lake pattern.
+
+### S3 Paths
+
+| Source | Path | Format |
+|--------|------|--------|
+| Destatis Genesis | `s3://dpl-data/raw/destatis/YYYY/MM/` | JSON (API response) |
+| OECD.Stat | `s3://dpl-data/raw/oecd/YYYY/MM/` | JSON/SDMX |
+| Bundestag DIP | `s3://dpl-data/raw/bundestag/YYYY/MM/` | JSON |
+| arXiv | `s3://dpl-data/raw/arxiv/YYYY/MM/` | XML metadata + PDF |
+| EUR-Lex | `s3://dpl-data/raw/eurlex/YYYY/MM/` | HTML/PDF |
+
+### Rules
+
+- **Never delete** raw files. They are the ground truth.
+- Each ingestion run writes to `YYYY/MM/DD/` partition.
+- Filenames include content hash: `12411-0001_2024-01-15_a3f2c891.json`
+- Iceberg snapshots provide time-travel: you can reproduce any past state.
+- Local dev: mirror to `data/raw/<source>/YYYY-MM-DD/` (gitignored).
+
+---
+
+## Layer 2 — Structured Storage (Apache Iceberg on S3)
+
+Same as BASt structured layer. Iceberg tables stored as Parquet in S3, managed via PyIceberg or AWS Glue catalog.
+
+### Schema
+
+#### `documents` table
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | STRING | UUID, stable across re-ingests |
+| `source` | STRING | `"bundestag"`, `"arxiv"`, `"eurlex"` |
+| `title` | STRING | Document title |
+| `date` | DATE | Publication date |
+| `domain` | STRING | Policy domain (e.g., `"housing"`) |
+| `url` | STRING | Canonical URL |
+| `text_hash` | STRING | SHA-256 of text content (dedup key) |
+| `evidence_quality` | INT | 0–5 score (see Quality Scoring below) |
+| `ingested_at` | TIMESTAMP | When this row was written |
+
+#### `indicators` table
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `indicator_id` | STRING | Source table code (e.g., `"12411-0001"`) |
+| `source` | STRING | `"destatis"` or `"oecd"` |
+| `country` | STRING | ISO 3166-1 alpha-3 (e.g., `"DEU"`) |
+| `year` | INT | Reference year |
+| `value` | DOUBLE | Numeric value |
+| `unit` | STRING | Unit of measurement |
+| `ingested_at` | TIMESTAMP | When this row was written |
+
+#### `policy_links` table
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `document_id` | STRING | FK → `documents.id` |
+| `policy_id` | STRING | FK → DPL policy slug |
+| `relevance_score` | DOUBLE | 0.0–1.0 cosine similarity |
+| `linked_at` | TIMESTAMP | When this link was created |
+
+### Query Engines
+
+| Environment | Engine | Notes |
+|-------------|--------|-------|
+| Local dev | DuckDB | `pip install duckdb` — reads Parquet directly |
+| Production | AWS Athena | Uses Glue catalog, charged per TB scanned |
+| CI/testing | DuckDB in-memory | No S3 dependency |
+
+```python
+# Local DuckDB example
+import duckdb
+conn = duckdb.connect()
+df = conn.execute("""
+    SELECT year, value, unit
+    FROM read_parquet('data/indicators/destatis/**/*.parquet')
+    WHERE indicator_id = '12411-0001'
+    ORDER BY year
+""").df()
+```
+
+---
+
+## Layer 3 — Vector Store (Semantic Search)
+
+This layer is **new vs. BASt** — BASt has no semantic search requirement because its data is structured time series. DPL needs this because most source material is unstructured text.
+
+### Design
 
 ```
-data/policies.ts
-  └── exports Policy[] (static, version-controlled)
-       │
-       ▼
-lib/policies.ts
-  └── getAllPolicies(), getPolicyById(), filterPolicies(), sortPolicies()
-       │
-       ├──► app/page.tsx          (renders policy list, filters)
-       │
-       ├──► app/api/ask/route.ts  (assembles context for AI prompt)
-       │         │
-       │         ▼
-       │    Anthropic API → streaming response → client
-       │
-       └──► lib/scoring.ts
-                └── calculatePriorityScore() → used in sort & display
-
-data/sources.ts
-  └── exports Source[] (bibliography)
-       └──► referenced by policy.sources[] (IDs, not inline objects)
+documents.text
+    │
+    ▼ chunking (512 tokens, 64 token overlap)
+    │
+    ▼ embedding (OpenAI text-embedding-3-small or Cohere embed-multilingual-v3.0)
+    │
+    ▼ vector store (pgvector / Pinecone)
+         │
+         ▼ at query time: retrieve top-k chunks → assemble context → Claude
 ```
 
-The key principle: **data flows in one direction**. Pages and API routes consume `lib/`, which consumes `data/`. Nothing in `data/` imports from `lib/` or `app/`.
+### Embedding Models
+
+| Model | Dimensions | Multilingual | Cost |
+|-------|-----------|--------------|------|
+| `text-embedding-3-small` | 1536 | No (EN bias) | ~$0.02/1M tokens |
+| `cohere-embed-multilingual-v3.0` | 1024 | Yes (DE+EN) | ~$0.10/1M tokens |
+
+**Recommendation:** Use Cohere for German-language documents (Destatis, Bundestag), OpenAI for English (arXiv, OECD).
+
+### Storage Options
+
+| Option | Best for | Notes |
+|--------|----------|-------|
+| pgvector | Local dev, small scale | Free, PostgreSQL extension |
+| Pinecone | Production | Managed, scales automatically |
+| Turso + vector | Edge deployment | SQLite-based, Vercel-compatible |
+
+### RAG Pipeline (Module I)
+
+```
+User question
+    │
+    ▼ embed question
+    │
+    ▼ vector search → top-5 relevant chunks
+    │
+    ▼ + relevant indicators from Iceberg
+    │
+    ▼ assemble context (~4k tokens)
+    │
+    ▼ Claude claude-3-5-sonnet → streaming response
+```
+
+Current v0.1 approach: dumps all 18 policies as context (~8k tokens). This works now but will break at 100+ policies. Module I replaces this.
 
 ---
 
-## Module Structure
+## Ingestion Agent Architecture
 
-### `data/`
+Each data source is implemented as a Python class inheriting from `BaseFetcher`.
 
-Static data only. No business logic.
+### Agent Lifecycle
 
-- **`policies.ts`** — The canonical list of 18 policy entries. Each policy is a single TypeScript object conforming to the `Policy` interface. This is the file contributors edit to add or update policies.
-- **`sources.ts`** — The bibliography. Each source has a unique string ID that is referenced from `policy.sources[]`. This separation keeps policy objects lean and makes it possible to query which policies share a source.
+```
+Daily cron (GitHub Actions / AWS EventBridge)
+    │
+    ├── DestatisFetcher.run()
+    │       fetch() → raw API response
+    │       store_raw() → data/raw/destatis/YYYY-MM-DD/
+    │       parse() → list[dict]
+    │       extract_metadata() → evidence_quality score
+    │       to_parquet() → data/indicators/destatis/YYYY-MM-DD/
+    │
+    ├── OECDFetcher.run()       (parallel)
+    ├── BundestagFetcher.run()  (parallel)
+    ├── ArxivFetcher.run()      (parallel)
+    └── EurlexFetcher.run()     (parallel)
+              │
+              ▼ (after all fetchers complete)
+    EmbeddingAgent.run()
+              │
+              ▼
+    PolicyLinker.run()
+```
 
-### `lib/`
+### Agent Swarm
 
-Pure functions. No React, no Next.js imports.
+For parallel ingestion, agents are run as concurrent tasks:
 
-- **`policies.ts`** — Query helpers: filter by domain, status, evidence strength; sort by priority score, impact, confidence, difficulty.
-- **`scoring.ts`** — The priority score formula: `(expectedImpact × evidenceWeight × confidence/100) / implementationDifficulty`, normalised 0–100. Explicitly labelled "Experimental prioritisation model".
-- **`ai/`** — Prompt construction and context assembly for the AI ask feature. Builds a context string from all policy data and sends it to the Anthropic API.
+```python
+import asyncio
 
-### `app/`
+async def run_pipeline():
+    fetchers = [DestatisFetcher(), OECDFetcher(), BundestagFetcher()]
+    await asyncio.gather(*[f.run_async() for f in fetchers])
+```
 
-Next.js App Router pages and API routes.
+### Quality Scoring
 
-- **`page.tsx`** — Homepage: policy list with filters and sort controls.
-- **`layout.tsx`** — Root layout including the navigation bar.
-- **`api/ask/route.ts`** — Streaming API route for the AI Q&A feature. Receives a question, assembles context from all policies, calls the Anthropic API, and streams the response back to the browser.
+Each document receives an `evidence_quality` score (0–5):
 
-### `components/`
-
-Reusable React server and client components. All are presentational — they receive props and render UI; they do not fetch data.
-
----
-
-## How to Add a New Policy
-
-1. **Open `data/policies.ts`.**
-
-2. **Add a new object** to the `policies` array conforming to the `Policy` interface. Every field is required. Use existing entries as a template.
-
-   Key fields to fill carefully:
-   - `id` — kebab-case, unique, permanent (used in URLs and references)
-   - `evidenceStrength` — one of `"very-low" | "low" | "medium" | "high"`
-   - `expectedImpact` — integer 1–5
-   - `implementationDifficulty` — integer 1–5
-   - `confidence` — number 0–100, or `"unknown"`
-   - `whatWouldChangeOurMind` — all three arrays must be non-empty
-   - `sources` — array of source IDs referencing entries in `data/sources.ts`
-
-3. **Add any new sources** to `data/sources.ts`. Use the same `id` string you referenced in the policy's `sources` array.
-
-4. **Run the tests** to verify the new policy passes all validation checks:
-   ```bash
-   npm test
-   ```
-
-5. **Run the linter and TypeScript compiler:**
-   ```bash
-   npm run lint
-   npx tsc --noEmit
-   ```
-
-6. **Open a pull request.** The CI pipeline will run lint, type-check, tests, and a production build automatically.
+| Score | Source type | Rationale |
+|-------|-------------|-----------|
+| 5 | Destatis Genesis, Eurostat | Official government statistics. Primary data. |
+| 4 | OECD.Stat, IMF | Authoritative international bodies |
+| 3 | Bundestag DIP, EUR-Lex | Legislative documents — high reliability, potential political framing |
+| 2 | arXiv preprints | Peer review pending; methodology visible |
+| 1 | News, press releases | Secondary sources, potential bias |
+| 0 | Unknown / unverifiable | Should not reach production |
 
 ---
 
-## How to Add Future Modules (A–J)
+## Source Priority (Phase 1)
 
-Each roadmap module (see `docs/ROADMAP.md`) should follow this pattern:
+| Priority | Source | API | Coverage |
+|----------|--------|-----|----------|
+| 1 | Destatis Genesis | REST (GAST access) | German statistics — population, GDP, housing, CPI |
+| 2 | OECD.Stat | SDMX REST | International comparisons for Germany |
+| 3 | Bundestag DIP | REST (API key) | German legislation, Drucksachen, debates |
+| 4 | arXiv | OAI-PMH + REST | Academic papers (econ.GN, econ.PC) |
+| 5 | EUR-Lex | REST + SPARQL | EU legislation affecting Germany |
 
-1. **New data** goes in `data/<module>.ts` with a well-typed interface exported alongside the data array.
+---
 
-2. **New business logic** goes in `lib/<module>.ts` — pure functions, no framework dependencies.
+## Comparison with BASt Architecture
 
-3. **New pages** go in `app/<module>/page.tsx`. Use the App Router's file-based routing.
+| Dimension | BASt | DPL |
+|-----------|------|-----|
+| Primary data type | Structured (accident numbers, traffic counts) | Unstructured (text) + Structured (indicators) |
+| Input format | CSV, Excel | PDF, HTML → text extraction; JSON APIs for indicators |
+| Output format | Parquet (Iceberg) | Parquet (Iceberg) + vector embeddings |
+| Query paradigm | Time series analytics (SQL) | Semantic search (RAG) + SQL for indicators |
+| Extra storage layer | None | Vector store (pgvector / Pinecone) |
+| Primary language | German | German + English (multilingual embeddings) |
+| Deduplication | Row hash on numeric data | Content hash on document text |
+| AI usage | None | Claude for /ask endpoint (RAG) |
 
-4. **New API routes** (if the module requires server-side computation or external API calls) go in `app/api/<module>/route.ts`.
+Both architectures share: S3 raw layer, Iceberg structured layer, DuckDB for local queries, daily cron ingestion, content-hash deduplication.
 
-5. **New shared UI** goes in `components/<module-component>.tsx`.
+---
 
-6. **New tests** go in `__tests__/<module>.test.ts`. Run `npm test` to verify.
+## Module Descriptions (Roadmap A–J)
 
-For modules that require persistent state (Module D: Expert Review, Module H: Public Consultation), consider a lightweight hosted database (e.g., Turso, PlanetScale, or Vercel KV) rather than embedding mutable data in the repo. The `lib/` layer should abstract the data source so pages remain decoupled from storage decisions.
+Each roadmap module maps to specific architectural components:
 
-For modules requiring heavy computation (Module B: Budget Calculator, Module E: Citation Network), consider:
-- Running the computation at build time and persisting results as JSON in `data/`
-- Or exposing a server action / API route that performs computation on demand
+### Module A — German Länder Comparison Layer
+- **Data:** `data/laender.ts` — policy ID → 16-state status map
+- **Layer:** Static TypeScript (no ingestion pipeline needed)
+- **New component:** `components/laender-map.tsx` (SVG choropleth)
+
+### Module B — Budget Impact Calculator
+- **Data:** Parametric cost models per policy (economist-authored)
+- **Layer:** Client-side computation (no new API route)
+- **New component:** `components/budget-calculator.tsx`
+
+### Module C — Coalition Feasibility Scoring
+- **Data:** `data/coalition.ts` — party position statements (updated post-Bundestagswahl)
+- **Layer:** Static + scoring function in `lib/coalition.ts`
+- **Non-partisan safeguard:** Displays factual statements only, no endorsements
+
+### Module D — Expert Review System
+- **Data:** `data/reviews/` — structured review files submitted via PR
+- **Layer:** Static (GitHub-native workflow)
+- **New lib:** `lib/reviews.ts` — aggregate reviewer consensus
+
+### Module E — Citation Network Graph
+- **Data:** Built from existing `data/sources.ts` + `data/policies.ts`
+- **Layer:** Build-time graph computation → JSON in `data/`
+- **New component:** `components/citation-graph.tsx` (D3 force layout)
+
+### Module F — Policy Timeline Tracker
+- **Data:** `data/timeline.ts` — historical policy attempts by domain
+- **Layer:** Static (requires historian research input)
+- **New component:** `components/timeline.tsx`
+
+### Module G — German Localisation (i18n)
+- **Data:** Translation strings in `messages/de.json`, `messages/en.json`
+- **Layer:** `next-intl` middleware, no new data pipeline
+- **Constraint:** Policy content must be translated by domain experts, not machine translation
+
+### Module H — Public Consultation Integration
+- **Data:** Structured responses in Vercel KV or PostgreSQL
+- **Layer:** Requires persistent backend (first module to need a DB)
+- **New API:** `app/api/consultation/route.ts`
+
+### Module I — Advanced RAG (replaces full-context approach)
+- **Data:** Vector embeddings from all documents in Layer 2
+- **Layer:** Vector store (Layer 3) — this is the primary motivation for Layer 3
+- **New lib:** `lib/ai/retrieval.ts` — top-k chunk retrieval before generation
+- **Impact:** Enables scaling to 1000+ policies without hitting context limits
+
+### Module J — API for Researchers
+- **Data:** Exposes all Iceberg tables + policy data as JSON
+- **Layer:** `app/api/v1/` route group with OpenAPI spec
+- **Access:** Read-only, no API key, rate-limited via middleware
+
+---
+
+## Local Development Setup
+
+```bash
+# Install Python ingestion dependencies
+pip install requests pandas pyarrow duckdb
+
+# Fetch indicators (writes to data/indicators/)
+python scripts/ingest/destatis_fetcher.py --fetch all
+python scripts/ingest/oecd_fetcher.py --fetch all
+
+# Query locally with DuckDB
+python -c "
+import duckdb
+df = duckdb.query(\"SELECT * FROM read_parquet('data/indicators/**/*.parquet')\").df()
+print(df.head(20))
+"
+
+# Run full pipeline
+python scripts/ingest/run_pipeline.py
+```
+
+## File Structure (ingestion layer)
+
+```
+scripts/
+└── ingest/
+    ├── __init__.py
+    ├── base_fetcher.py      ← ABC for all ingestion agents
+    ├── destatis_fetcher.py  ← Destatis Genesis API (statistics)
+    ├── oecd_fetcher.py      ← OECD SDMX API (international comparisons)
+    ├── bundestag_fetcher.py ← Bundestag DIP API (legislation) [Phase 2]
+    ├── arxiv_fetcher.py     ← arXiv OAI-PMH [Phase 2]
+    └── run_pipeline.py      ← Master runner
+
+data/
+├── raw/                     ← Layer 1: immutable raw files (gitignored)
+│   ├── destatis/YYYY-MM-DD/
+│   ├── oecd/YYYY-MM-DD/
+│   └── bundestag/YYYY-MM-DD/
+└── indicators/              ← Layer 2: structured Parquet (gitignored)
+    ├── destatis/YYYY-MM-DD/
+    └── oecd/YYYY-MM-DD/
+```
+
+---
+
+## Application Architecture (v0.1 — unchanged)
+
+The Next.js application layer remains as described in the original architecture. The ingestion pipeline is a separate Python layer that eventually feeds the application via:
+
+1. **Indicators:** DuckDB queries at build time → JSON files in `data/`
+2. **Documents:** Vector store → retrieved at request time by `/ask` endpoint
+
+```
+data/policies.ts  (static, hand-curated)
+    └──► lib/policies.ts → app pages (current approach, v0.1)
+
+data/indicators/  (auto-ingested Parquet)
+    └──► DuckDB at build time → JSON → charts (Module A-B era)
+
+Vector store      (auto-embedded documents)
+    └──► /api/ask/route.ts → RAG → Claude (Module I)
+```
+
+The separation is intentional: the application never directly calls external APIs. Ingestion is a background batch process; the app consumes its outputs.
